@@ -8,3 +8,4 @@ pandas
 pytorch
 scikit-learn
 torchvision
+tqdm
