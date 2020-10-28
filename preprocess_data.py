@@ -1,8 +1,8 @@
-from pathlib import Path
-import pandas as pd
 import numpy as np
-import libs.utils as utils
+import pandas as pd
+from pathlib import Path
 
+import libs.utils as utils
 import libs.commons as commons
 from libs.text_processing import process_dataset
 

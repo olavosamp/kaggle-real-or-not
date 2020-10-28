@@ -4,8 +4,8 @@ from sklearn.model_selection import train_test_split
 import libs.commons as commons
 
 def split_train_val(train_set, train_size=0.8, random_seed=None, result_dir=commons.dataset_path):
-    train_y = train_set.loc[:, 'target']
-    train_x = train_set.drop(columns='target')
+    train_y = train_set.loc[:, commons.target_column_name]
+    train_x = train_set.drop(columns=commons.target_column_name)
 
     train_x, val_x, train_y, val_y = train_test_split(train_x, train_y, train_size=0.8,
         random_state=random_seed)
@@ -13,8 +13,8 @@ def split_train_val(train_set, train_size=0.8, random_seed=None, result_dir=comm
     train_set = train_x.copy()
     val_set   = val_x.copy()
 
-    train_set['target'] = train_y
-    val_set['target']   = val_y
+    train_set[commons.target_column_name] = train_y
+    val_set[commons.target_column_name]   = val_y
 
     if result_dir:
         train_path = Path(result_dir) / "train_processed.csv"

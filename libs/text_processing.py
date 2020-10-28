@@ -10,7 +10,7 @@ from nltk.corpus import stopwords
 from nltk.stem.porter import PorterStemmer
 import libs.commons as commons
 
-nltk.download("stopwords")
+# nltk.download("stopwords")
 
 def process_text(text, stopwords_set=None, stemmer=None):
     '''
@@ -55,14 +55,15 @@ def process_dataset(train_set, test_set, result_dir=Path(commons.dataset_path),
     feature_names = vectorizer.get_feature_names()
 
     # Apply the same vectorizer to the test set without training
+    train_set[commons.target_column_name] = train_set['target']
+    train_set.drop(columns=['id', 'keyword', 'location', 'text', 'target'], inplace=True)
+    test_set.drop(columns=['id', 'keyword', 'location', 'text'], inplace=True)
+
     features_test = vectorizer.transform(test_proc_text).toarray()
     train_set = pd.concat([train_set, pd.DataFrame(data=features_train, columns=feature_names)],
         axis=1)
     test_set = pd.concat([test_set, pd.DataFrame(data=features_test, columns=feature_names)],
         axis=1)
-
-    train_set.drop(columns=['id', 'keyword', 'location', 'text'], inplace=True)
-    test_set.drop(columns=['id', 'keyword', 'location', 'text'], inplace=True)
 
     if result_dir:
         train_path = Path(result_dir) / "dataset_processed.csv"
