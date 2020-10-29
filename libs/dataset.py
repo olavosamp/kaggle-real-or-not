@@ -1,7 +1,10 @@
 import re
 from pathlib import Path
+from torch.utils.data import Dataset, DataLoader
+import sklearn.preprocessing
 
 import nltk
+import torch
 import pandas as pd
 import numpy as np
 from bs4 import BeautifulSoup
@@ -11,6 +14,69 @@ from nltk.stem.porter import PorterStemmer
 
 import libs.commons as commons
 from sklearn.model_selection import train_test_split
+
+
+class TextDataset(Dataset):
+    def __init__(self, dataset_path, target_column, normalize, balance):
+        self.dataset_path = dataset_path
+        self.target_column = target_column
+        self.balance = balance
+        self.normalize = normalize
+
+        self.read_dataset()
+        self.length = len(self.target)
+
+        # If the dataset will be balanced, change length to the double of the
+        # largest class
+        positive_len = self.target.sum() # Count positive elements (ones_)
+        if self.balance and positive_len*2 != self.length:
+            if positive_len > self.length:
+                self.length = 2 * positive_len
+            else:
+                self.length = 2 * (self.length - positive_len)
+
+    def read_dataset(self):
+        assert Path(self.dataset_path).is_file(), "Dataset path does not exists."
+
+        dataset = pd.read_csv(self.dataset_path)
+        self.target = dataset[self.target_column]
+        self.dataset = dataset.drop(column=self.target_column)
+
+    @staticmethod
+    def scale_dataset(dataset):
+        return sklearn.preprocessing.scale(dataset, axis=0)
+
+    def imbalance_ratio(self):
+        # Compute the ratio between the negative and positive classes.
+        # If the dataset is artificially balanced, this ratio is 1.
+        if self.balance:
+            return 1.0
+        else:
+            return (1 - self.target).sum() / self.target.sum()
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        # Balance the dataset by using the positive samples multiple times.
+        # Indices between the original size and 2 times the number of negative
+        # samples are reassigned to positive sample indices.
+        if self.balance:
+            if idx < 0:
+                idx = self.length + idx
+            if idx >= len(self.target):
+                idx = (idx - len(self.target)) % self.target.sum()
+                idx = (self.target != 0).nonzero()[0][idx].item()
+
+        # Read and transform the image.
+        if self.normalize:
+            self.dataset = self.scale_dataset(self.dataset)
+
+        # Convert data to torch tensors
+        entry  = torch.tensor(self.dataset.loc[idx, :].values)
+        target = torch.tensor(self.target[idx])
+
+        return entry, target
 
 
 def create_dataset(train_path, test_path, random_seed=10):
@@ -24,6 +90,8 @@ def create_dataset(train_path, test_path, random_seed=10):
     # Split data in train and val sets
     train_x, val_x, train_y, val_y = split_train_val(train_set, train_size=0.8,
         random_seed=random_seed)
+
+    #TODO: Save csv files
 
     return train_x, val_x, train_y, val_y
 
