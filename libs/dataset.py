@@ -1,16 +1,17 @@
 import re
 from pathlib import Path
-from torch.utils.data import Dataset, DataLoader
-import sklearn.preprocessing
 
-import nltk
 import torch
 import pandas as pd
 import numpy as np
-from bs4 import BeautifulSoup
+import torch
+from torch.utils.data import Dataset, DataLoader
+import sklearn.preprocessing
 from sklearn.feature_extraction.text import CountVectorizer
+import nltk
 from nltk.corpus import stopwords
 from nltk.stem.porter import PorterStemmer
+from bs4 import BeautifulSoup
 
 import libs.commons as commons
 from sklearn.model_selection import train_test_split
@@ -26,9 +27,8 @@ class TextDataset(Dataset):
         self.read_dataset()
         self.length = len(self.target)
 
-        # If the dataset will be balanced, change length to the double of the
-        # largest class
-        positive_len = self.target.sum() # Count positive elements (ones_)
+        # If the dataset will be balanced, change length to the double of the largest class
+        positive_len = self.target.sum() # Count positive elements (ones)
         if self.balance and positive_len*2 != self.length:
             if positive_len > self.length:
                 self.length = 2 * positive_len
@@ -79,7 +79,7 @@ class TextDataset(Dataset):
         return entry, target
 
 
-def create_dataset(train_path, test_path, random_seed=10):
+def create_dataset(train_path, test_path, random_seed=10, save_dir=commons.dataset_path):
     train_set = pd.read_csv(train_path)
     test_set = pd.read_csv(test_path)
 
@@ -91,29 +91,26 @@ def create_dataset(train_path, test_path, random_seed=10):
     train_x, val_x, train_y, val_y = split_train_val(train_set, train_size=0.8,
         random_seed=random_seed)
 
-    #TODO: Save csv files
+    # Save data to csv
+    if save_dir:
+        train_set = train_x.copy()
+        val_set   = val_x.copy()
+        train_set[commons.target_column_name] = train_y
+        val_set[commons.target_column_name]   = val_y
 
+        train_set.to_csv(Path(save_dir) / "train_processed.csv", index=False)
+        val_set.to_csv(Path(save_dir) / "val_processed.csv", index=False)
+
+    # Return data anyway for sklearn models
     return train_x, val_x, train_y, val_y
 
 
-def split_train_val(train_set, train_size=0.8, random_seed=None, result_dir=commons.dataset_path):
+def split_train_val(train_set, train_size=0.8, random_seed=None):
     train_y = train_set.loc[:, commons.target_column_name]
     train_x = train_set.drop(columns=commons.target_column_name)
 
     train_x, val_x, train_y, val_y = train_test_split(train_x, train_y, train_size=0.8,
         random_state=random_seed)
-
-    train_set = train_x.copy()
-    val_set   = val_x.copy()
-
-    train_set[commons.target_column_name] = train_y
-    val_set[commons.target_column_name]   = val_y
-
-    if result_dir:
-        train_path = Path(result_dir) / "train_processed.csv"
-        val_path  = Path(result_dir) / "val_processed.csv"    
-        train_set.to_csv(train_path, index=False)
-        val_set.to_csv(val_path, index=False)
 
     return train_x, val_x, train_y, val_y
 
