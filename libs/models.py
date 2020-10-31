@@ -9,8 +9,8 @@ import pandas as pd
 import sklearn.metrics
 from tqdm import tqdm
 
-import lib.dataset
-import lib.dirs as dirs
+import libs.dataset
+import libs.common as dirs
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -47,10 +47,6 @@ def load_model(model, weight_path, device=device, eval=True):
     weight_path = str(weight_path)
     assert os.path.isfile(weight_path), "Invalid weight filepath."
     checkpoint = torch.load(weight_path)#, map_location=device)
-    # print(checkpoint)
-    # input()
-    
-    # model.load_state_dict(checkpoint['model_state_dict'])
     model.load_state_dict(checkpoint)
     return model
 
@@ -81,26 +77,13 @@ def predict(model, dataloader, device=device, threshold=None, use_metadata=True)
     '''
     model.to(device)
     model.eval()
-    # if metadata:
-    #     def inference_single_input(single_input):
-    #         # image = single_input[0].view(1, -1)
-    #         image = image.to(device)
-    #         metadata = single_input[1].to(device)
-    #         return model(image, metadata)
-    # else:
-    #     def inference_single_input(single_input):
-    #         return model(single_input.to(device))
-
     softmax = torch.nn.Softmax(dim=1)
     result_list = []
     for image, metadata in tqdm(dataloader):
         image    = image.to(device)
         metadata = metadata.to(device)
 
-        if use_metadata:
-            output = model(image, metadata)
-        else:
-            output = model(image)
+        output = model(image)
 
         confidence = softmax(output).detach().cpu().numpy()[:, 1]
         result_list.append(confidence)
@@ -108,9 +91,8 @@ def predict(model, dataloader, device=device, threshold=None, use_metadata=True)
     return result_list
 
 
-def train_model(model, dataset, batch_size, optimizer, scheduler, num_epochs,
-                loss_balance=True, identifier=None,
-                freeze_conv=False):
+def train_model(model, dataset, batch_size, optimizer, scheduler, num_epochs, loss_balance=True,
+                identifier=None, freeze_conv=False):
     # Create unique identifier for this experiment.
     if identifier is None:
         identifier = str(uuid.uuid4())
@@ -119,9 +101,9 @@ def train_model(model, dataset, batch_size, optimizer, scheduler, num_epochs,
     phase_list = ("train", "val")
 
     # Setup experiment paths
-    experiment_dir = Path(dirs.experiments) / str(identifier)
+    experiment_dir = Path(commons.experiments) / str(identifier)
     weights_folder  = experiment_dir / "weights" 
-    dirs.create_folder(weights_folder)
+    commons.create_folder(weights_folder)
 
     freeze_convolutional_resnet(model, freeze_conv)
 
@@ -225,7 +207,7 @@ def train_model(model, dataset, batch_size, optimizer, scheduler, num_epochs,
         weights_path = weights_folder / "resnet18_epoch_{}_{}.pth".format(i+1, identifier)
         results_path = experiment_dir / "epoch_{}_results.json".format(i+1)
         torch.save(model.state_dict(), weights_path)
-        results_df.to_json(results_path)
+        results_df.to_csv(results_path, index=False)
 
     return results_path.parent
 
