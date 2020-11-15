@@ -40,11 +40,11 @@ class TextDataset(Dataset):
             self.dataset.loc[:,:] = (self.scale_dataset(self.dataset.loc[:,:]))
 
     def read_dataset(self):
-        '''Reads csv file to feature and target DataFrames'''
+        '''Reads csv file to feature DataFrame and target ndarray'''
         assert Path(self.dataset_path).is_file(), "Dataset path does not exists."
 
         dataset = pd.read_csv(self.dataset_path)
-        self.target = dataset.loc[:, self.target_column]
+        self.target = dataset.loc[:, self.target_column].values
         self.dataset = dataset.drop(columns=[self.target_column])
 
     @staticmethod
@@ -75,7 +75,7 @@ class TextDataset(Dataset):
 
         # Convert data to torch tensors
         entry  = torch.tensor(self.dataset.loc[idx, :].values)
-        target = torch.tensor(self.target.loc[idx].values)
+        target = torch.tensor(self.target-[idx])
 
         return entry, target
 
