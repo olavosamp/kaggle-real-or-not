@@ -10,7 +10,7 @@ import sklearn.metrics
 from tqdm import tqdm
 
 import libs.dataset
-import libs.common as dirs
+import libs.commons as commons
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -101,7 +101,7 @@ def train_model(model, dataset, batch_size, optimizer, scheduler, num_epochs, lo
     phase_list = ("train", "val")
 
     # Setup experiment paths
-    experiment_dir = Path(commons.experiments) / str(identifier)
+    experiment_dir = Path(commons.experiments_path) / str(identifier)
     weights_folder  = experiment_dir / "weights" 
     commons.create_folder(weights_folder)
 

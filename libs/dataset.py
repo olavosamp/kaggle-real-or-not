@@ -35,12 +35,17 @@ class TextDataset(Dataset):
             else:
                 self.length = 2 * (self.length - positive_len)
 
+        # Normalize dataset.
+        if self.normalize:
+            self.dataset.loc[:,:] = (self.scale_dataset(self.dataset.loc[:,:]))
+
     def read_dataset(self):
+        '''Reads csv file to feature and target DataFrames'''
         assert Path(self.dataset_path).is_file(), "Dataset path does not exists."
 
         dataset = pd.read_csv(self.dataset_path)
-        self.target = dataset[self.target_column]
-        self.dataset = dataset.drop(column=self.target_column)
+        self.target = dataset.loc[:, self.target_column]
+        self.dataset = dataset.drop(columns=[self.target_column])
 
     @staticmethod
     def scale_dataset(dataset):
@@ -68,13 +73,9 @@ class TextDataset(Dataset):
                 idx = (idx - len(self.target)) % self.target.sum()
                 idx = (self.target != 0).nonzero()[0][idx].item()
 
-        # Read and transform the image.
-        if self.normalize:
-            self.dataset = self.scale_dataset(self.dataset)
-
         # Convert data to torch tensors
         entry  = torch.tensor(self.dataset.loc[idx, :].values)
-        target = torch.tensor(self.target[idx])
+        target = torch.tensor(self.target.loc[idx].values)
 
         return entry, target
 
