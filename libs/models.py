@@ -45,7 +45,9 @@ def load_model(model, weight_path, device=device, eval=True):
             Filepath of the weights.
     '''
     weight_path = str(weight_path)
-    assert os.path.isfile(weight_path), "Invalid weight filepath."
+    if not os.path.isfile(weight_path):
+        raise ValueError("Invalid weight filepath.")
+
     checkpoint = torch.load(weight_path)#, map_location=device)
     model.load_state_dict(checkpoint)
     return model

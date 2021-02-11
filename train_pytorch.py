@@ -39,8 +39,7 @@ if __name__ == "__main__":
     # image_transform = utils.resnet_transforms(defs.IMAGENET_MEAN, defs.IMAGENET_STD)
 
     # Create train and validation datasets
-    train_x, val_x, train_y, val_y = create_dataset(train_path, test_path,
-        random_seed=random_seed)
+    _, _, _, _ = create_dataset(train_path, test_path, random_seed=random_seed)
 
     dataset = {}
     dataset["train"] = TextDataset(train_processed_path, target_column=commons.target_column_name, normalize=normalize,

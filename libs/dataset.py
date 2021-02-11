@@ -93,6 +93,7 @@ def create_dataset(train_path, test_path, random_seed=10, save_dir=commons.datas
         result_dir=commons.dataset_path, stopwords=stopwords.words("english"))
 
     # Split data in train and val sets
+    print("\nSplitting dataset...")
     train_x, val_x, train_y, val_y = split_train_val(train_set, train_size=0.8,
         random_seed=random_seed)
 
@@ -146,23 +147,23 @@ def process_text(text, stopwords=None, stemmer=None):
 
 def bow_matrix(train_text, test_text, max_features, load_path=None, save_path=None):
     vectorizer = CountVectorizer(max_features=5000, preprocessor=lambda x: x, tokenizer=lambda x: x)
-    if Path(load_path).is_file():
-        parameters = utils.load_pickle(load_path)
-        vectorizer = vectorizer.set_params(**parameters)
+
+    if load_path:
+        vectorizer.vocabulary_ = utils.load_pickle(load_path)
         features_train = vectorizer.transform(train_text).toarray()
     else:
         features_train = vectorizer.fit_transform(train_text).toarray()
 
-    vocabulary     = vectorizer.vocabulary_
-    feature_names  = vectorizer.get_feature_names()
+    vocabulary    = vectorizer.vocabulary_
+    feature_names = vectorizer.get_feature_names()
 
-    features_test  = vectorizer.transform(test_text).toarray()
+    features_test = vectorizer.transform(test_text).toarray()
 
     new_train_df = pd.DataFrame(data=features_train, columns=feature_names)
-    new_test_df = pd.DataFrame(data=features_test, columns=feature_names)
+    new_test_df  = pd.DataFrame(data=features_test, columns=feature_names)
 
     if save_path:
-        utils.save_pickle(vectorizer.get_params(deep=True), save_path)
+        utils.save_pickle(vocabulary, save_path)
 
     return new_train_df, new_test_df, vocabulary
 
@@ -172,7 +173,7 @@ def process_dataset(train_set, test_set, result_dir=Path(commons.dataset_path),
     '''Apply text preprocessing and BoW coding to the dataset text features'''
 
     if verbose:
-        print(f"\nCleaning text...")
+        print("\nCleaning text...")
     train_proc_text = train_set['text'].apply(process_text, stopwords=stopwords,
         stemmer=stemmer)
     test_proc_text = test_set['text'].apply(process_text, stopwords=stopwords,
@@ -180,9 +181,9 @@ def process_dataset(train_set, test_set, result_dir=Path(commons.dataset_path),
 
     if verbose:
         print("\nAssembling Bag of Words matrix...")
-    features_path = Path(commons.dataset_path) / "vectorizer_params.pickle"
-    new_train_df, new_test_df, vocabulary = bow_matrix(train_proc_text, test_proc_text, 5000,
-        load_path=features_path, save_path=features_path)
+    features_path = Path(commons.experiments_path) / "vectorizer_params.pickle"
+    new_train_df, new_test_df, vocabulary = bow_matrix(
+        train_proc_text, test_proc_text, 5000, load_path=features_path, save_path=features_path)
 
     train_set[commons.target_column_name] = train_set['target']
     train_set.drop(columns=['id', 'keyword', 'location', 'text', 'target'], inplace=True)
