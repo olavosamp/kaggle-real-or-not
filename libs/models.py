@@ -1,8 +1,11 @@
 import os
 import time
 import uuid
+
 from pathlib import Path
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import torchvision
 import numpy  as np
 import pandas as pd
@@ -13,6 +16,90 @@ import libs.dataset
 import libs.commons as commons
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+class FeedForwardNet(nn.Module):
+    """
+    Define a neural network that performs binary classification.
+    The network should accept your number of features as input, and produce 
+    a single sigmoid value, that can be rounded to a label: 0 or 1, as output.
+
+    Notes on training:
+    To train a binary classifier in PyTorch, use BCELoss.
+    BCELoss is binary cross entropy loss, documentation: https://pytorch.org/docs/stable/nn.html#torch.nn.BCELoss
+    """
+
+    def __init__(self, input_features, hidden_dim, output_dim, dropout_prob=0.):
+        """
+        Initialize the model by setting up linear layers.
+        Use the input parameters to help define the layers of your model.
+        :param input_features: the number of input features in your training/test data
+        :param hidden_dim: helps define the number of nodes in the hidden layer(s)
+        :param output_dim: the number of outputs you want to produce
+        """
+        super().__init__()
+        self.input_features = input_features
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+        self.dropout_prob = dropout_prob
+
+        self.drop = nn.Dropout(self.dropout_prob)  # dropout with 30% prob
+
+        # define all layers, here
+        self.fc1 = nn.Linear(input_features, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, output_dim)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        """
+        Perform a forward pass of our model on input features, x.
+        :param x: A batch of input features of size (batch_size, input_features)
+        :return: A single, sigmoid-activated value as output
+        """
+        x = x.view(-1, self.input_features)
+
+        x = self.fc1(x)
+        x = F.relu(x)
+
+        x = self.drop(x)
+
+        x = self.fc2(x)
+        x = self.sigmoid(x)
+
+        return x
+
+
+class EarlyStop:
+    '''Early stopping monitor for loss minimization'''
+    def __init__(self, patience=8, tol=1e-4):
+        self.counter = 0
+        self.patience = patience
+        self.tol = tol
+        self.best_loss = 999
+
+    def step(self, loss):
+        if self.best_loss - loss >  self.tol:
+            self.counter = 0
+            self.best_loss = loss
+        else:
+            self.counter += 1
+        
+        print(self.counter)
+        
+        return self.check_early_stop()
+
+    def check_early_stop(self):
+        if self.counter >= self.patience:
+            return True # Stop
+        else:
+            return False # Do not stop
+
+
+def instantiate_resnet18_model(device, pretrained=True):
+    resnet = torchvision.models.resnet18(pretrained=True)
+    resnet.fc = torch.nn.Linear(512, 2)
+    resnet.to(device)
+    return resnet
+
 
 def freeze_convolutional_resnet(model, freeze):
     '''
@@ -91,6 +178,120 @@ def predict(model, dataloader, device=device, threshold=None, use_metadata=True)
         result_list.append(confidence)
 
     return result_list
+
+
+def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_epochs, loss_balance=True,
+                identifier=None, device=device):
+    print("Using device: ", device)
+    # Create unique identifier for this experiment.
+    if identifier is None:
+        identifier = str(uuid.uuid4())
+    else:
+        identifier = str(identifier) + "_" + str(uuid.uuid4())
+    phase_list = ("train", "val")
+
+    # Setup experiment paths
+    experiment_dir = Path(commons.experiments_path) / str(identifier)
+    weights_folder  = experiment_dir / "weights" 
+    commons.create_folder(weights_folder)
+
+    # Instantiate loss and softmax.
+    if loss_balance:
+        weight = [1.0, dataset["train"].imbalance_ratio()]
+        weight = torch.tensor(weight).to(device)
+        cross_entropy_loss = torch.nn.CrossEntropyLoss(weight=weight)
+    else:
+        cross_entropy_loss = torch.nn.CrossEntropyLoss()
+    softmax = torch.nn.Softmax(dim=1)
+
+    # Define data loaders.
+    data_loader = {x: torch.utils.data.DataLoader(dataset[x],
+        batch_size=batch_size, shuffle=True, num_workers=4)
+        for x in phase_list}
+
+    # Measures that will be computed later.
+    tracked_metrics = ["epoch", "phase", "loss", "accuracy", "auc", "seconds"]
+    epoch_auc       = {x: np.zeros(num_epochs) for x in phase_list}
+    epoch_loss      = {x: np.zeros(num_epochs) for x in phase_list}
+    epoch_accuracy  = {x: np.zeros(num_epochs) for x in phase_list}
+    results_df      = pd.DataFrame()
+
+    for i in range(num_epochs):
+        print("\nEpoch: {}/{}".format(i+1, num_epochs))
+        results_dict = {metric: [] for metric in tracked_metrics}
+        for phase in phase_list:
+            print("\n{} phase: ".format(str(phase).capitalize()))
+
+            # Set model to training or evalution mode according to the phase.
+            if phase == "train":
+                model.train()
+            else:
+                model.eval()
+
+            epoch_target = []
+            epoch_confidence = []
+            epoch_seconds = time.time()
+            # Iterate over the dataset.
+            for entry, target  in tqdm(data_loader[phase]):
+                # Update epoch target list to compute AUC(ROC) later.
+                epoch_target.append(target.numpy())
+
+                # Load samples to device.
+                entry = entry.to(device)
+                target = target.to(device)
+
+                # Set gradients to zero.
+                optimizer.zero_grad()
+
+                # Calculate gradients only in the training phase.
+                with torch.set_grad_enabled(phase=="train"):
+                    output = model(entry)
+                    loss = cross_entropy_loss(output, target)
+                    confidence = softmax(output).detach().cpu().numpy()[:, 1]
+
+                    # Backward gradients and update weights if training.
+                    if phase=="train":
+                        loss.backward()
+                        optimizer.step()
+
+                # Update epoch loss and epoch confidence list.
+                epoch_loss[phase][i] += loss.item()
+                epoch_confidence.append(confidence)
+
+            if phase == "train":
+                scheduler.step()
+
+            # Compute epoch loss, accuracy and AUC(ROC).
+            sample_number = len(dataset[phase])
+            epoch_target = np.concatenate(epoch_target, axis=0)
+            epoch_confidence = np.concatenate(epoch_confidence, axis=0) # List of batch confidences
+            epoch_loss[phase][i] /= sample_number
+            epoch_correct = epoch_target == (epoch_confidence > 0.5)
+            epoch_accuracy[phase][i] = (epoch_correct.sum() / sample_number)
+            epoch_auc[phase][i] = sklearn.metrics.roc_auc_score(epoch_target,
+                                                                epoch_confidence)
+            epoch_seconds = time.time() - epoch_seconds
+
+            time_string   = time.strftime("%H:%M:%S", time.gmtime(epoch_seconds))
+            print("Epoch complete in ", time_string)
+            print("{} loss: {:.4f}".format(phase, epoch_loss[phase][i]))
+            print("{} accuracy: {:.4f}".format(phase, epoch_accuracy[phase][i]))
+            print("{} area under ROC curve: {:.4f}".format(phase, epoch_auc[phase][i]))
+
+            # Collect metrics in a dictionary
+            results_dict["epoch"].append(i+1) # Epochs start at 1
+            results_dict["phase"].append(phase)
+            results_dict["loss"].append(epoch_loss[phase][i])
+            results_dict["accuracy"].append(epoch_accuracy[phase][i])
+            results_dict["auc"].append(epoch_auc[phase][i])
+            results_dict["seconds"].append(epoch_seconds)
+
+        # Save metrics
+        results_df = results_df.append(pd.DataFrame(results_dict), sort=False, ignore_index=True)
+        results_path = experiment_dir / "epoch_{}_results.json".format(i+1)
+        results_df.to_csv(results_path, index=False)
+
+    return results_path.parent
 
 
 def train_model(model, dataset, batch_size, optimizer, scheduler, num_epochs, loss_balance=True,

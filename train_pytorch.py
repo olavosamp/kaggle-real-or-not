@@ -20,8 +20,8 @@ if __name__ == "__main__":
     normalize            = True
     random_seed          = 10
     vocabulary_size      = 5000
-    balance              = True
-    loss_balance         = not(balance)
+    balance_data         = False
+    balance_loss         = not(balance_data)
     freeze_conv          = False
     batch_size           = 64
     learning_rate        = 0.001
@@ -32,7 +32,7 @@ if __name__ == "__main__":
     gamma                = 0.1
     data_sample_size     = 1.   # This should be 1 for training with the entire dataset
     identifier           = "sample_{:.0f}%_vocabulary_size_{}_loss-balance_{}_dataset-balance_{}_freeze_{}".format(
-                            data_sample_size*100, vocabulary_size, loss_balance, balance, freeze_conv)
+                            data_sample_size*100, vocabulary_size, balance_loss, balance_data, freeze_conv)
 
     # TODO: Finish train script
     # Define image transformations
@@ -43,7 +43,7 @@ if __name__ == "__main__":
 
     dataset = {}
     dataset["train"] = TextDataset(train_processed_path, target_column=commons.target_column_name, normalize=normalize,
-        balance=balance)
+        balance=balance_data)
     dataset["val"] = TextDataset(val_processed_path, target_column=commons.target_column_name, normalize=normalize,
         balance=False)
 
@@ -51,11 +51,8 @@ if __name__ == "__main__":
     print("Validation set size: {}.".format(len(dataset["val"])))
 
     # Load model
-    # resnet = torchvision.models.resnext50_32x4d(pretrained=True)
-    resnet = torchvision.models.resnet18(pretrained=True)
-    resnet.fc = torch.nn.Linear(512, 2)
-    model = resnet
-    model.to(models.device)
+    # model = models.instantiate_resnet18_model(models.device, pretrained=True)
+    model = models.FeedForwardNet(vocabulary_size, 80, 2)
 
     # optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,
     #             momentum=momentum, weight_decay=weight_decay)
@@ -66,5 +63,8 @@ if __name__ == "__main__":
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size,
                 gamma=gamma)
 
-    results_folder = models.train_model(model, dataset, batch_size, optimizer, scheduler, epochs,
-                        loss_balance=loss_balance, identifier=identifier,freeze_conv=freeze_conv)
+    # results_folder = models.train_model(model, dataset, batch_size, optimizer, scheduler, epochs,
+    #                     loss_balance=loss_balance, identifier=identifier,freeze_conv=freeze_conv)
+
+    results_folder = models.train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, epochs,
+                        loss_balance=balance_loss, identifier=identifier)

@@ -1,5 +1,5 @@
 beautifulsoup4
-cudatoolkit
+cudatoolkit=10.2
 jupyter
 matplotlib
 nltk
