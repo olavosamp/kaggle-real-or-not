@@ -182,7 +182,11 @@ def predict(model, dataloader, device=device, threshold=None, use_metadata=True)
 
 def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_epochs, loss_balance=True,
                 identifier=None, device=device):
-    print("Using device: ", device)
+    print("\nUsing device: ", device)
+    device_params = {"device": device, "dtype": torch.float64}
+
+    model.to(**device_params)
+
     # Create unique identifier for this experiment.
     if identifier is None:
         identifier = str(uuid.uuid4())
@@ -198,7 +202,7 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
     # Instantiate loss and softmax.
     if loss_balance:
         weight = [1.0, dataset["train"].imbalance_ratio()]
-        weight = torch.tensor(weight).to(device)
+        weight = torch.tensor(weight).to(**device_params)
         cross_entropy_loss = torch.nn.CrossEntropyLoss(weight=weight)
     else:
         cross_entropy_loss = torch.nn.CrossEntropyLoss()
@@ -237,8 +241,8 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
                 epoch_target.append(target.numpy())
 
                 # Load samples to device.
-                entry = entry.to(device)
-                target = target.to(device)
+                entry = entry.to(**device_params)
+                target = target.to(device, dtype=torch.int64)
 
                 # Set gradients to zero.
                 optimizer.zero_grad()
@@ -275,7 +279,7 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
             time_string   = time.strftime("%H:%M:%S", time.gmtime(epoch_seconds))
             print("Epoch complete in ", time_string)
             print("{} loss: {:.4f}".format(phase, epoch_loss[phase][i]))
-            print("{} accuracy: {:.4f}".format(phase, epoch_accuracy[phase][i]))
+            print("{} accuracy: {:.2f}%".format(phase, epoch_accuracy[phase][i]*100))
             print("{} area under ROC curve: {:.4f}".format(phase, epoch_auc[phase][i]))
 
             # Collect metrics in a dictionary

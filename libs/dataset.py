@@ -8,7 +8,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import sklearn.preprocessing
 from sklearn.feature_extraction.text import CountVectorizer
-import nltk
 from nltk.corpus import stopwords
 from nltk.stem.porter import PorterStemmer
 from bs4 import BeautifulSoup
@@ -16,8 +15,6 @@ from bs4 import BeautifulSoup
 import libs.commons as commons
 import libs.utils as utils
 from sklearn.model_selection import train_test_split
-
-nltk.download('stopwords')
 
 class TextDataset(Dataset):
     def __init__(self, dataset_path, target_column, normalize, balance):
@@ -70,21 +67,22 @@ class TextDataset(Dataset):
         Indices between the original size and 2 times the number of negative
         samples are reassigned to positive sample indices.
         '''
-        if self.balance:
-            if idx < 0:
-                idx = self.length + idx
-            if idx >= len(self.target):
-                idx = (idx - len(self.target)) % self.target.sum()
-                idx = (self.target != 0).nonzero()[0][idx].item()
+        # if self.balance:
+        #     if idx < 0:
+        #         idx = self.length + idx
+        #     if idx >= len(self.target):
+        #         idx = (idx - len(self.target)) % self.target.sum()
+        #         idx = (self.target != 0).nonzero()[0][idx].item()
+            # target = torch.tensor(self.target-[idx])
 
         # Convert data to torch tensors
         entry  = torch.tensor(self.dataset.loc[idx, :].values)
-        target = torch.tensor(self.target-[idx])
+        target = torch.tensor(self.target[idx])
 
         return entry, target
 
 
-def create_dataset(train_path, test_path, random_seed=10, save_dir=commons.dataset_path):
+def create_dataset(train_path, test_path, seed=10, save_dir=commons.dataset_path):
     train_set = pd.read_csv(train_path)
     test_set = pd.read_csv(test_path)
 
@@ -95,10 +93,11 @@ def create_dataset(train_path, test_path, random_seed=10, save_dir=commons.datas
     # Split data in train and val sets
     print("\nSplitting dataset...")
     train_x, val_x, train_y, val_y = split_train_val(train_set, train_size=0.8,
-        random_seed=random_seed)
+        seed=seed)
 
     # Save data to csv
     if save_dir:
+        print("\nSaving dataset to file...")
         train_set = train_x.copy()
         val_set   = val_x.copy()
         train_set[commons.target_column_name] = train_y
@@ -111,12 +110,12 @@ def create_dataset(train_path, test_path, random_seed=10, save_dir=commons.datas
     return train_x, val_x, train_y, val_y
 
 
-def split_train_val(train_set, train_size=0.8, random_seed=None):
+def split_train_val(train_set, train_size=0.8, seed=None):
     train_y = train_set.loc[:, commons.target_column_name]
     train_x = train_set.drop(columns=commons.target_column_name)
 
     train_x, val_x, train_y, val_y = train_test_split(train_x, train_y, train_size=0.8,
-        random_state=random_seed)
+        random_state=seed)
 
     return train_x, val_x, train_y, val_y
 

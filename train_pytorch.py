@@ -12,9 +12,10 @@ import libs.models   as models
 import libs.commons as commons
 from libs.dataset import TextDataset
 
-nltk.download('stopwords')
 
 if __name__ == "__main__":
+    nltk.download('stopwords')
+
     train_processed_path = Path(commons.dataset_path) / "train_processed.csv"
     val_processed_path   = Path(commons.dataset_path) / "val_processed.csv"
     normalize            = True

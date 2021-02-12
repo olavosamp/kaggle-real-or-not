@@ -8,4 +8,4 @@ train_path           = Path(commons.dataset_path) / "train.csv"
 test_path            = Path(commons.dataset_path) / "test.csv"
 
 # Create train and validation datasets
-_, _, _, _ = create_dataset(train_path, test_path, random_seed=seed)
+_, _, _, _ = create_dataset(train_path, test_path, seed=seed)
