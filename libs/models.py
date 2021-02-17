@@ -301,8 +301,8 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
         results_path = experiment_dir / "epoch_{}_results.json".format(i+1)
         results_df.to_csv(results_path, index=False)
 
-        i =+ 1
-        early_stop.step(epoch_loss[phase][i])
+        i += 1
+        early_stop.step(epoch_loss["train"][i])
     return results_path.parent
 
 
