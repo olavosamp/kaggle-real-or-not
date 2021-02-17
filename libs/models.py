@@ -217,10 +217,13 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
     tracked_metrics = ["epoch", "phase", "loss", "accuracy", "auc", "seconds"]
     epoch_auc       = {x: np.zeros(num_epochs) for x in phase_list}
     epoch_loss      = {x: np.zeros(num_epochs) for x in phase_list}
+    epoch_f1        = {x: np.zeros(num_epochs) for x in phase_list}
     epoch_accuracy  = {x: np.zeros(num_epochs) for x in phase_list}
     results_df      = pd.DataFrame()
 
-    for i in range(num_epochs):
+    i = 0
+    early_stop = EarlyStop(tol=1e-5)
+    while i <= num_epochs and not early_stop.check_early_stop():
         print("\nEpoch: {}/{}".format(i+1, num_epochs))
         results_dict = {metric: [] for metric in tracked_metrics}
         for phase in phase_list:
@@ -269,9 +272,11 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
             sample_number = len(dataset[phase])
             epoch_target = np.concatenate(epoch_target, axis=0)
             epoch_confidence = np.concatenate(epoch_confidence, axis=0) # List of batch confidences
+            epoch_prediction = epoch_confidence > 0.5
             epoch_loss[phase][i] /= sample_number
-            epoch_correct = epoch_target == (epoch_confidence > 0.5)
+            epoch_correct = epoch_target == epoch_prediction
             epoch_accuracy[phase][i] = (epoch_correct.sum() / sample_number)
+            epoch_f1[phase][i] = sklearn.metrics.f1_score(epoch_target, epoch_prediction)
             epoch_auc[phase][i] = sklearn.metrics.roc_auc_score(epoch_target,
                                                                 epoch_confidence)
             epoch_seconds = time.time() - epoch_seconds
@@ -280,6 +285,7 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
             print("Epoch complete in ", time_string)
             print("{} loss: {:.4f}".format(phase, epoch_loss[phase][i]))
             print("{} accuracy: {:.2f}%".format(phase, epoch_accuracy[phase][i]*100))
+            print("{} F1: {:.4f}".format(phase, epoch_f1[phase][i]))
             print("{} area under ROC curve: {:.4f}".format(phase, epoch_auc[phase][i]))
 
             # Collect metrics in a dictionary
@@ -295,6 +301,8 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
         results_path = experiment_dir / "epoch_{}_results.json".format(i+1)
         results_df.to_csv(results_path, index=False)
 
+        i =+ 1
+        early_stop.step(epoch_loss[phase][i])
     return results_path.parent
 
 

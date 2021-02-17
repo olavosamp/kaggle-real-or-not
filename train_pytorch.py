@@ -24,7 +24,7 @@ if __name__ == "__main__":
     balance_data         = False
     balance_loss         = not(balance_data)
     freeze_conv          = False
-    epochs               = 5
+    epochs               = 50
     batch_size           = 64
     learning_rate        = 0.001
     weight_decay         = 0.0001
