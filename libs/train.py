@@ -71,17 +71,19 @@ class MetricTracker:
         if "roc_auc" in self.metrics:
             epoch_results["roc_auc"] = self.calculate_roc_auc(target, confidence)
         if "seconds" in self.metrics:
-            epoch_results["seconds"] = self.time()
-        self.results_df.append(epoch_results, sort=False, ignore_index=True)
+            elapsed = self.time()
+            if elapsed is None:
+                raise ValueError
+            epoch_results["seconds"] = elapsed
+        self.results_df = self.results_df.append(epoch_results, sort=False, ignore_index=True)
 
     def time(self):
         if self.time_start is None:
             self.time_start = time.time()
             return None
-        else:
-            elapsed = time.time() - self.time_start
-            self.time_start = None
-            return elapsed
+        elapsed = time.time() - self.time_start
+        self.time_start = None
+        return elapsed
 
     @property
     def last_result(self):
@@ -135,7 +137,7 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
     device_params = {"device": device, "dtype": torch.float64}
     model.to(**device_params)
 
-    tracked_metrics = ["accuracy", "f1", "auc", "seconds"]
+    tracked_metrics = ["accuracy", "f1_score", "roc_auc", "seconds"]
     early_stop = EarlyStop(tol=1e-5)
     metrics = MetricTracker(metrics=tracked_metrics)
 
@@ -220,8 +222,8 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
             print("Epoch complete in ", time_string)
             print("{} loss: {:.4f}".format(phase, metrics.last_result["loss"]))
             print("{} accuracy: {:.2f}%".format(phase, metrics.last_result["accuracy"]))
-            print("{} F1: {:.4f}".format(phase, metrics.last_result["f1"]))
-            print("{} area under ROC curve: {:.4f}".format(phase, metrics.last_result["auc"]))
+            print("{} F1: {:.4f}".format(phase, metrics.last_result["f1_score"]))
+            print("{} area under ROC curve: {:.4f}".format(phase, metrics.last_result["roc_auc"]))
 
         # Save metrics
         results_path = experiment_dir / "epoch_{}_results.json".format(i+1)
