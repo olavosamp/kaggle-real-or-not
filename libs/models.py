@@ -94,8 +94,58 @@ class EarlyStop:
             return False # Do not stop
 
 
+class MetricTracker:
+    def __init__(self, metrics=[], threshold=0.5):
+        self.metrics = metrics
+        self.columns = ["epoch", "phase", "loss"] + metrics
+        self.results_df = pd.DataFrame(self.columns)
+        self.threshold = threshold
+        self.time_start = None
+
+    @staticmethod
+    def calculate_accuracy(target, prediction, num_samples):
+        correct = target == prediction
+        return np.sum(correct) / num_samples
+
+    @staticmethod
+    def calculate_f1_score(target, prediction):
+        return sklearn.metrics.f1_score(target, prediction)
+
+    @staticmethod
+    def calculate_roc_auc(target, confidence):
+        return sklearn.metrics.roc_auc_score(target, confidence)
+
+    def add(self, epoch, phase, target, confidence, loss, num_samples):
+        prediction = confidence > self.threshold
+        loss = loss / num_samples
+
+        epoch_results = {"epoch": epoch, "phase": phase, "loss": loss}
+        if "accuracy" in self.metrics:
+            epoch_results["accuracy"] = self.calculate_accuracy(target, prediction, num_samples)
+        if "f1_score" in self.metrics:
+            epoch_results["f1_score"] = self.calculate_f1_score(target, prediction)
+        if "roc_auc" in self.metrics:
+            epoch_results["roc_auc"] = self.calculate_roc_auc(target, confidence)
+        if "seconds" in self.metrics:
+            epoch_results["seconds"] = self.time()
+        self.results_df.append(epoch_results, sort=False, ignore_index=True)
+
+    def time(self):
+        if self.time_start is None:
+            self.time_start = time.time()
+            return None
+        else:
+            elapsed = time.time() - self.time_start
+            self.time_start = None
+            return elapsed
+
+    @callable
+    def last_result(self):
+        return self.results_df.loc[self.results_df.index[-1], :]
+
+
 def instantiate_resnet18_model(device, pretrained=True):
-    resnet = torchvision.models.resnet18(pretrained=True)
+    resnet = torchvision.models.resnet18(pretrained=pretrained)
     resnet.fc = torch.nn.Linear(512, 2)
     resnet.to(device)
     return resnet
@@ -115,8 +165,8 @@ def freeze_convolutional_resnet(model, freeze):
         for param in child.parameters():
             # Freeze == True sets requires_grad = False: freezes layers
             param.requires_grad = not(freeze)
-    
-    # Do not freeze FC layer
+
+    # Don't freeze FC layer
     for param in model.fc.parameters():
         param.requires_grad = True
 
@@ -180,12 +230,15 @@ def predict(model, dataloader, device=device, threshold=None, use_metadata=True)
     return result_list
 
 
-def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_epochs, loss_balance=True,
-                identifier=None, device=device):
+def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_epochs,
+        loss_balance=True, identifier=None, device=device):
     print("\nUsing device: ", device)
     device_params = {"device": device, "dtype": torch.float64}
-
     model.to(**device_params)
+
+    tracked_metrics = ["accuracy", "f1", "auc", "seconds"]
+    early_stop = EarlyStop(tol=1e-5)
+    metrics = MetricTracker(metrics=tracked_metrics)
 
     # Create unique identifier for this experiment.
     if identifier is None:
@@ -209,23 +262,13 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
     softmax = torch.nn.Softmax(dim=1)
 
     # Define data loaders.
-    data_loader = {x: torch.utils.data.DataLoader(dataset[x],
-        batch_size=batch_size, shuffle=True, num_workers=4)
-        for x in phase_list}
-
-    # Measures that will be computed later.
-    tracked_metrics = ["epoch", "phase", "loss", "accuracy", "auc", "seconds"]
-    epoch_auc       = {x: np.zeros(num_epochs) for x in phase_list}
-    epoch_loss      = {x: np.zeros(num_epochs) for x in phase_list}
-    epoch_f1        = {x: np.zeros(num_epochs) for x in phase_list}
-    epoch_accuracy  = {x: np.zeros(num_epochs) for x in phase_list}
-    results_df      = pd.DataFrame()
+    data_loader = {phase: torch.utils.data.DataLoader(
+        dataset[phase], batch_size=batch_size, shuffle=True, num_workers=4) for phase in phase_list}
 
     i = 0
-    early_stop = EarlyStop(tol=1e-5)
     while i <= num_epochs and not early_stop.check_early_stop():
         print("\nEpoch: {}/{}".format(i+1, num_epochs))
-        results_dict = {metric: [] for metric in tracked_metrics}
+        phase_loss = 0
         for phase in phase_list:
             print("\n{} phase: ".format(str(phase).capitalize()))
 
@@ -237,7 +280,7 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
 
             epoch_target = []
             epoch_confidence = []
-            epoch_seconds = time.time()
+            metrics.time()
             # Iterate over the dataset.
             for entry, target  in tqdm(data_loader[phase]):
                 # Update epoch target list to compute AUC(ROC) later.
@@ -262,47 +305,31 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
                         optimizer.step()
 
                 # Update epoch loss and epoch confidence list.
-                epoch_loss[phase][i] += loss.item()
+                phase_loss += loss.item()
                 epoch_confidence.append(confidence)
 
             if phase == "train":
                 scheduler.step()
 
             # Compute epoch loss, accuracy and AUC(ROC).
-            sample_number = len(dataset[phase])
+            num_samples = len(dataset[phase])
             epoch_target = np.concatenate(epoch_target, axis=0)
             epoch_confidence = np.concatenate(epoch_confidence, axis=0) # List of batch confidences
-            epoch_prediction = epoch_confidence > 0.5
-            epoch_loss[phase][i] /= sample_number
-            epoch_correct = epoch_target == epoch_prediction
-            epoch_accuracy[phase][i] = (epoch_correct.sum() / sample_number)
-            epoch_f1[phase][i] = sklearn.metrics.f1_score(epoch_target, epoch_prediction)
-            epoch_auc[phase][i] = sklearn.metrics.roc_auc_score(epoch_target,
-                                                                epoch_confidence)
-            epoch_seconds = time.time() - epoch_seconds
+            metrics.add(i+1, phase, epoch_target, epoch_confidence, phase_loss, num_samples)
 
-            time_string   = time.strftime("%H:%M:%S", time.gmtime(epoch_seconds))
+            time_string = time.strftime("%H:%M:%S", time.gmtime(metrics.last_result["seconds"]))
             print("Epoch complete in ", time_string)
-            print("{} loss: {:.4f}".format(phase, epoch_loss[phase][i]))
-            print("{} accuracy: {:.2f}%".format(phase, epoch_accuracy[phase][i]*100))
-            print("{} F1: {:.4f}".format(phase, epoch_f1[phase][i]))
-            print("{} area under ROC curve: {:.4f}".format(phase, epoch_auc[phase][i]))
-
-            # Collect metrics in a dictionary
-            results_dict["epoch"].append(i+1) # Epochs start at 1
-            results_dict["phase"].append(phase)
-            results_dict["loss"].append(epoch_loss[phase][i])
-            results_dict["accuracy"].append(epoch_accuracy[phase][i])
-            results_dict["auc"].append(epoch_auc[phase][i])
-            results_dict["seconds"].append(epoch_seconds)
+            print("{} loss: {:.4f}".format(phase, metrics.last_result["loss"]))
+            print("{} accuracy: {:.2f}%".format(phase, metrics.last_result["accuracy"]))
+            print("{} F1: {:.4f}".format(phase, metrics.last_result["f1"]))
+            print("{} area under ROC curve: {:.4f}".format(phase, metrics.last_result["auc"]))
 
         # Save metrics
-        results_df = results_df.append(pd.DataFrame(results_dict), sort=False, ignore_index=True)
         results_path = experiment_dir / "epoch_{}_results.json".format(i+1)
-        results_df.to_csv(results_path, index=False)
+        metrics.results_df.to_csv(results_path, index=False)
 
         i += 1
-        early_stop.step(epoch_loss["train"][i])
+        early_stop.step(metrics.last_result["loss"])
     return results_path.parent
 
 

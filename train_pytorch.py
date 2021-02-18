@@ -51,7 +51,7 @@ if __name__ == "__main__":
 
     # Load model
     # model = models.instantiate_resnet18_model(models.device, pretrained=True)
-    model = models.FeedForwardNet(vocabulary_size, 80, 2)
+    model = models.FeedForwardNet(vocabulary_size, 140, 2)
 
     # optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,
     #             momentum=momentum, weight_decay=weight_decay)
