@@ -1,14 +1,10 @@
-import time
 from pathlib import Path
 
 import nltk
 import torch
-import torchvision
-import pandas as pd
-import numpy as np
-from sklearn.metrics import f1_score, accuracy_score
 
-import libs.models   as models
+import libs.models  as models
+import libs.train   as train
 import libs.commons as commons
 from libs.dataset import TextDataset
 
@@ -41,10 +37,10 @@ if __name__ == "__main__":
 
     print("\nInitializing dataloaders...")
     dataset = {}
-    dataset["train"] = TextDataset(train_processed_path, target_column=commons.target_column_name, normalize=normalize,
-        balance=balance_data)
-    dataset["val"] = TextDataset(val_processed_path, target_column=commons.target_column_name, normalize=normalize,
-        balance=False)
+    dataset["train"] = TextDataset(train_processed_path, target_column=commons.target_column_name,
+        normalize=normalize, balance=balance_data)
+    dataset["val"] = TextDataset(val_processed_path, target_column=commons.target_column_name,
+        normalize=normalize, balance=False)
 
     print("Train set size: {}.".format(len(dataset["train"])))
     print("Validation set size: {}.".format(len(dataset["val"])))
@@ -65,5 +61,5 @@ if __name__ == "__main__":
     # results_folder = models.train_model(model, dataset, batch_size, optimizer, scheduler, epochs,
     #                     loss_balance=loss_balance, identifier=identifier,freeze_conv=freeze_conv)
     print("\nTraining model...")
-    results_folder = models.train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, epochs,
-                        loss_balance=balance_loss, identifier=identifier)
+    results_folder = train.train_feedforward_net(model, dataset, batch_size, optimizer, scheduler,
+        epochs, loss_balance=balance_loss, identifier=identifier)

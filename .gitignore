@@ -7,6 +7,9 @@ data/
 # VSCode config files
 .vscode
 
+# Linter config files
+.pylintrc
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
