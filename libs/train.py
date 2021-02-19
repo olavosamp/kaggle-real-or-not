@@ -34,15 +34,14 @@ class EarlyStop:
     def check_early_stop(self):
         if self.counter >= self.patience:
             return True # Stop
-        else:
-            return False # Do not stop
+        return False # Do not stop
 
 
 class MetricTracker:
     def __init__(self, metrics=[], threshold=0.5):
         self.metrics = metrics
         self.columns = ["epoch", "phase", "loss"] + metrics
-        self.results_df = pd.DataFrame(self.columns)
+        self.results_df = pd.DataFrame(columns=self.columns)
         self.threshold = threshold
         self.time_start = None
 
@@ -59,7 +58,15 @@ class MetricTracker:
     def calculate_roc_auc(target, confidence):
         return sklearn.metrics.roc_auc_score(target, confidence)
 
-    def add(self, epoch, phase, target, confidence, loss, num_samples):
+    def epoch_start(self):
+        if self.time_start is None:
+            self.time_start = time.time()
+            return None
+        elapsed = time.time() - self.time_start
+        self.time_start = None
+        return elapsed
+
+    def epoch_end(self, epoch, phase, target, confidence, loss, num_samples):
         prediction = confidence > self.threshold
         loss = loss / num_samples
 
@@ -71,24 +78,21 @@ class MetricTracker:
         if "roc_auc" in self.metrics:
             epoch_results["roc_auc"] = self.calculate_roc_auc(target, confidence)
         if "seconds" in self.metrics:
-            elapsed = self.time()
+            elapsed = self.epoch_start()
             if elapsed is None:
                 raise ValueError
             epoch_results["seconds"] = elapsed
         self.results_df = self.results_df.append(epoch_results, sort=False, ignore_index=True)
 
-    def time(self):
-        if self.time_start is None:
-            self.time_start = time.time()
-            return None
-        elapsed = time.time() - self.time_start
-        self.time_start = None
-        return elapsed
-
-    @property
-    def last_result(self):
-        last_index = self.results_df.index[-1]
+    def last_result(self, phase):
+        last_index = self.results_df.query('phase == @phase').index[-1]
         return self.results_df.loc[last_index, :]
+
+    def save_results(self, path, verbose=True):
+        commons.create_folder(path)
+        self.results_df.to_csv(path, index=False)
+        if verbose:
+            print(f"\nSaved results to\n{path}")
 
 
 def predict(model, dataloader, device=models.device, threshold=None, use_metadata=True):
@@ -150,7 +154,7 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
 
     # Setup experiment paths
     experiment_dir = Path(commons.experiments_path) / str(identifier)
-    weights_folder  = experiment_dir / "weights" 
+    weights_folder  = experiment_dir / "weights"
     commons.create_folder(weights_folder)
 
     # Instantiate loss and softmax.
@@ -181,7 +185,7 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
 
             epoch_target = []
             epoch_confidence = []
-            metrics.time()
+            metrics.epoch_start()
             # Iterate over the dataset.
             for entry, target  in tqdm(data_loader[phase]):
                 # Update epoch target list to compute AUC(ROC) later.
@@ -216,21 +220,24 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
             num_samples = len(dataset[phase])
             epoch_target = np.concatenate(epoch_target, axis=0)
             epoch_confidence = np.concatenate(epoch_confidence, axis=0) # List of batch confidences
-            metrics.add(i+1, phase, epoch_target, epoch_confidence, phase_loss, num_samples)
+            metrics.epoch_end(i+1, phase, epoch_target, epoch_confidence, phase_loss, num_samples)
 
-            time_string = time.strftime("%H:%M:%S", time.gmtime(metrics.last_result["seconds"]))
+            time_string = time.strftime("%H:%M:%S", time.gmtime(metrics.last_result(phase)["seconds"]))
             print("Epoch complete in ", time_string)
-            print("{} loss: {:.4f}".format(phase, metrics.last_result["loss"]))
-            print("{} accuracy: {:.2f}%".format(phase, metrics.last_result["accuracy"]))
-            print("{} F1: {:.4f}".format(phase, metrics.last_result["f1_score"]))
-            print("{} area under ROC curve: {:.4f}".format(phase, metrics.last_result["roc_auc"]))
+            print("{} loss: {:.4f}".format(phase, metrics.last_result(phase)["loss"]))
+            print("{} accuracy: {:.2f}%".format(phase, metrics.last_result(phase)["accuracy"]))
+            print("{} F1: {:.4f}".format(phase, metrics.last_result(phase)["f1_score"]))
+            print("{} AUC: {:.4f}".format(phase, metrics.last_result(phase)["roc_auc"]))
 
         # Save metrics
-        results_path = experiment_dir / "epoch_{}_results.json".format(i+1)
-        metrics.results_df.to_csv(results_path, index=False)
+        weights_path = weights_folder / "ffnet_epoch_{}_{}.pth".format(i+1, identifier)
+        results_path = experiment_dir / "epoch_{}_results.csv".format(i+1)
+        torch.save(model.state_dict(), weights_path)
+        metrics.save_results(results_path)
+        # metrics.results_df.to_csv(results_path, index=False)
 
         i += 1
-        early_stop.step(metrics.last_result["loss"])
+        early_stop.step(metrics.last_result('val')["loss"])
     return results_path.parent
 
 
@@ -245,7 +252,7 @@ def train_model(model, dataset, batch_size, optimizer, scheduler, num_epochs, lo
 
     # Setup experiment paths
     experiment_dir = Path(commons.experiments_path) / str(identifier)
-    weights_folder  = experiment_dir / "weights" 
+    weights_folder  = experiment_dir / "weights"
     commons.create_folder(weights_folder)
 
     freeze_convolutional_resnet(model, freeze_conv)
@@ -348,7 +355,7 @@ def train_model(model, dataset, batch_size, optimizer, scheduler, num_epochs, lo
 
         # Save model
         weights_path = weights_folder / "resnet18_epoch_{}_{}.pth".format(i+1, identifier)
-        results_path = experiment_dir / "epoch_{}_results.json".format(i+1)
+        results_path = experiment_dir / "epoch_{}_results.csv".format(i+1)
         torch.save(model.state_dict(), weights_path)
         results_df.to_csv(results_path, index=False)
 
