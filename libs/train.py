@@ -21,14 +21,11 @@ class EarlyStop:
         self.best_loss = 999
 
     def step(self, loss):
-        if self.best_loss - loss >  self.tol:
+        if self.best_loss - loss > self.tol:
             self.counter = 0
             self.best_loss = loss
         else:
             self.counter += 1
-        
-        print(self.counter)
-        
         return self.check_early_stop()
 
     def check_early_stop(self):
@@ -38,8 +35,9 @@ class EarlyStop:
 
 
 class MetricTracker:
+    '''Helper for tracking metrics by epoch'''
     def __init__(self, metrics=[], threshold=0.5):
-        self.metrics = metrics
+        self.tracked_metrics = metrics
         self.columns = ["epoch", "phase", "loss"] + metrics
         self.results_df = pd.DataFrame(columns=self.columns)
         self.threshold = threshold
@@ -71,13 +69,13 @@ class MetricTracker:
         loss = loss / num_samples
 
         epoch_results = {"epoch": epoch, "phase": phase, "loss": loss}
-        if "accuracy" in self.metrics:
+        if "accuracy" in self.tracked_metrics:
             epoch_results["accuracy"] = self.calculate_accuracy(target, prediction, num_samples)
-        if "f1_score" in self.metrics:
+        if "f1_score" in self.tracked_metrics:
             epoch_results["f1_score"] = self.calculate_f1_score(target, prediction)
-        if "roc_auc" in self.metrics:
+        if "roc_auc" in self.tracked_metrics:
             epoch_results["roc_auc"] = self.calculate_roc_auc(target, confidence)
-        if "seconds" in self.metrics:
+        if "seconds" in self.tracked_metrics:
             elapsed = self.epoch_start()
             if elapsed is None:
                 raise ValueError
@@ -89,10 +87,26 @@ class MetricTracker:
         return self.results_df.loc[last_index, :]
 
     def save_results(self, path, verbose=True):
-        commons.create_folder(path)
+        commons.create_folder(Path(path).parent)
         self.results_df.to_csv(path, index=False)
         if verbose:
             print(f"\nSaved results to\n{path}")
+
+    def print_results(self, phase, result=None):
+        if result is None:
+            result = self.last_result(phase)
+        elif not hasattr(result, "shape"):
+            raise ValueError("Result must be either: \'last\' or a Series-like object.")
+
+        self.time_string = time.strftime("%H:%M:%S", time.gmtime(result["seconds"].values))
+        print("Epoch complete in ", self.time_string)
+        print("{} loss: {:.4f}".format(phase, result["loss"].values))
+        if "accuracy" in self.tracked_metrics:
+            print("{} accuracy: {:.2f}%".format(phase, result["accura.valuescy"]))
+        if "f1_score" in self.tracked_metrics:
+            print("{} F1: {:.4f}".format(phase, result["f1_sco.valuesre"]))
+        if "roc_auc" in self.tracked_metrics:
+            print("{} AUC: {:.4f}".format(phase, result["roc_au.valuesc"]))
 
 
 def predict(model, dataloader, device=models.device, threshold=None, use_metadata=True):
@@ -183,13 +197,13 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
             else:
                 model.eval()
 
-            epoch_target = []
-            epoch_confidence = []
+            batch_target = []
+            batch_confidence = []
             metrics.epoch_start()
             # Iterate over the dataset.
             for entry, target  in tqdm(data_loader[phase]):
                 # Update epoch target list to compute AUC(ROC) later.
-                epoch_target.append(target.numpy())
+                batch_target.append(target.numpy())
 
                 # Load samples to device.
                 entry = entry.to(**device_params)
@@ -211,33 +225,35 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
 
                 # Update epoch loss and epoch confidence list.
                 phase_loss += loss.item()
-                epoch_confidence.append(confidence)
+                batch_confidence.append(confidence)
 
             if phase == "train":
                 scheduler.step()
 
             # Compute epoch loss, accuracy and AUC(ROC).
             num_samples = len(dataset[phase])
-            epoch_target = np.concatenate(epoch_target, axis=0)
-            epoch_confidence = np.concatenate(epoch_confidence, axis=0) # List of batch confidences
-            metrics.epoch_end(i+1, phase, epoch_target, epoch_confidence, phase_loss, num_samples)
+            batch_target = np.concatenate(batch_target, axis=0)
+            batch_confidence = np.concatenate(batch_confidence, axis=0) # List of batch confidences
+            metrics.epoch_end(i+1, phase, batch_target, batch_confidence, phase_loss, num_samples)
 
-            time_string = time.strftime("%H:%M:%S", time.gmtime(metrics.last_result(phase)["seconds"]))
-            print("Epoch complete in ", time_string)
-            print("{} loss: {:.4f}".format(phase, metrics.last_result(phase)["loss"]))
-            print("{} accuracy: {:.2f}%".format(phase, metrics.last_result(phase)["accuracy"]))
-            print("{} F1: {:.4f}".format(phase, metrics.last_result(phase)["f1_score"]))
-            print("{} AUC: {:.4f}".format(phase, metrics.last_result(phase)["roc_auc"]))
+            metrics.print_results(phase)
 
-        # Save metrics
-        weights_path = weights_folder / "ffnet_epoch_{}_{}.pth".format(i+1, identifier)
-        results_path = experiment_dir / "epoch_{}_results.csv".format(i+1)
-        torch.save(model.state_dict(), weights_path)
-        metrics.save_results(results_path)
-        # metrics.results_df.to_csv(results_path, index=False)
+        # Save best weights
+        if early_stop.counter == 0: # Implies a new best validation loss
+            weights_path = weights_folder / "ffnet_epoch_{}_{}.pth".format(i+1, identifier)
+            torch.save(model.state_dict(), weights_path)
 
         i += 1
         early_stop.step(metrics.last_result('val')["loss"])
+
+    best_id = metrics.results_df.query("phase == 'val'")["loss"].idxmin()
+    best_epoch = metrics.results_df.loc[best_id, "epoch"]
+    best_result = metrics.results_df.query("epoch == @best_epoch & phase == 'val'")
+    metrics.print_results('val', result=best_result)
+
+    # Save results from all epochs
+    results_path = experiment_dir / "epoch_{}_results.csv".format(i+1)
+    metrics.save_results(results_path)
     return results_path.parent
 
 
