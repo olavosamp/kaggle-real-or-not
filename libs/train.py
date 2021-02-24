@@ -84,7 +84,7 @@ class MetricTracker:
 
     def last_result(self, phase):
         last_index = self.results_df.query('phase == @phase').index[-1]
-        return self.results_df.loc[last_index, :].iloc[0]
+        return self.results_df.loc[last_index, :]
 
     def save_results(self, path, verbose=True):
         commons.create_folder(Path(path).parent)
@@ -156,7 +156,7 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
     model.to(**device_params)
 
     tracked_metrics = ["accuracy", "f1_score", "roc_auc", "seconds"]
-    early_stop = EarlyStop(tol=1e-5)
+    early_stop = EarlyStop(tol=1e-5, patience=8)
     metrics = MetricTracker(metrics=tracked_metrics)
 
     # Create unique identifier for this experiment.
@@ -252,7 +252,8 @@ def train_feedforward_net(model, dataset, batch_size, optimizer, scheduler, num_
 
     best_id = metrics.results_df.query("phase == 'val'")["loss"].idxmin()
     best_epoch = metrics.results_df.loc[best_id, "epoch"]
-    best_result = metrics.results_df.query("epoch == @best_epoch & phase == 'val'")
+    best_result = metrics.results_df.query("epoch == @best_epoch & phase == 'val'").iloc[0,:]
+    print("\nBest epoch: ", best_epoch)
     metrics.print_results('val', result=best_result)
 
     # Save results from all epochs

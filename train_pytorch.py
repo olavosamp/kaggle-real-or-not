@@ -16,7 +16,7 @@ if __name__ == "__main__":
     val_processed_path   = Path(commons.dataset_path) / "val_processed.csv"
     normalize            = True
     seed                 = 10
-    vocabulary_size      = 5000
+    vocabulary_size      = 5000 # TODO: Detect vocabulary size from data
     balance_data         = False
     balance_loss         = not(balance_data)
     freeze_conv          = False
