@@ -82,13 +82,29 @@ class TextDataset(Dataset):
         return entry, target
 
 
+def remove_empty_features(train_set, test_set, verbose=False):
+    '''Drop feature columns that have zero variance'''
+    drop_train = set(train_set.columns[train_set.std(axis=0) == 0])
+    drop_test  = set(test_set.columns[test_set.std(axis=0) == 0])
+    drop_columns = drop_train.intersection(drop_test)
+    if verbose:
+        print("\nRemoving non-informative features...\n", list(drop_columns))
+
+    train_set = train_set.drop(columns=drop_columns)
+    test_set  = test_set.drop(columns=drop_columns)
+    return train_set, test_set
+
+
 def create_dataset(train_path, test_path, seed=10, save_dir=commons.dataset_path):
     train_set = pd.read_csv(train_path)
     test_set = pd.read_csv(test_path)
 
     # Preprocess and clean text features
-    train_set, test_set, _vocabulary = process_dataset(train_set, test_set,
+    train_set, test_set, vocabulary = process_dataset(train_set, test_set,
         result_dir=commons.dataset_path, stopwords=stopwords.words("english"))
+
+    train_set, test_set = remove_empty_features(train_set, test_set, verbose=True)
+    vocabulary = set(vocabulary).intersection(train_set.columns)
 
     # Split data in train and val sets
     print("\nSplitting dataset...")
@@ -114,7 +130,7 @@ def split_train_val(train_set, train_size=0.8, seed=None):
     train_y = train_set.loc[:, commons.target_column_name]
     train_x = train_set.drop(columns=commons.target_column_name)
 
-    train_x, val_x, train_y, val_y = train_test_split(train_x, train_y, train_size=0.8,
+    train_x, val_x, train_y, val_y = train_test_split(train_x, train_y, train_size=train_size,
         random_state=seed)
 
     return train_x, val_x, train_y, val_y
