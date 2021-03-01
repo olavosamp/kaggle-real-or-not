@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 import sklearn.preprocessing
+from sklearn.preprocessing import StandardScaler
 from sklearn.feature_extraction.text import CountVectorizer
 from nltk.corpus import stopwords
 from nltk.stem.porter import PorterStemmer
@@ -34,9 +35,9 @@ class TextDataset(Dataset):
             else:
                 self.length = 2 * (self.length - positive_len)
 
-        # Normalize dataset.
-        if self.normalize:
-            self.dataset.loc[:,:] = (self.scale_dataset(self.dataset.loc[:,:]))
+        # # Normalize dataset.
+        # if self.normalize:
+        #     self.dataset.loc[:,:] = (scale_dataset(self.dataset.loc[:,:]))
 
     def read_dataset(self):
         '''Reads csv file to feature DataFrame and target ndarray'''
@@ -45,10 +46,6 @@ class TextDataset(Dataset):
         dataset = pd.read_csv(self.dataset_path)
         self.target = dataset.loc[:, self.target_column].values
         self.dataset = dataset.drop(columns=[self.target_column])
-
-    @staticmethod
-    def scale_dataset(dataset):
-        return sklearn.preprocessing.scale(dataset, axis=0)
 
     def imbalance_ratio(self):
         '''Compute the ratio between the negative and positive classes.
@@ -82,6 +79,15 @@ class TextDataset(Dataset):
         return entry, target
 
 
+def scale_dataset(train_x, val_x, test_x):
+    '''Compute mean and std from the train set and use them to scale val and test sets as well'''
+    scaler = StandardScaler()
+    train_x.loc[:,:] = scaler.fit_transform(train_x.loc[:,:])
+    val_x.loc[:,:]   = scaler.transform(val_x.loc[:,:])
+    test_x.loc[:,:]  = scaler.transform(test_x.loc[:,:])
+    return train_x, val_x, test_x
+
+
 def remove_empty_features(train_set, test_set, verbose=False):
     '''Drop feature columns that have zero variance'''
     drop_train = set(train_set.columns[train_set.std(axis=0) == 0])
@@ -95,7 +101,8 @@ def remove_empty_features(train_set, test_set, verbose=False):
     return train_set, test_set
 
 
-def create_dataset(train_path, test_path, seed=10, save_dir=commons.dataset_path):
+def create_dataset(train_path, test_path, seed=10, standardize=True, pca_ratio=0.95,
+     save_dir=commons.dataset_path):
     train_set = pd.read_csv(train_path)
     test_set = pd.read_csv(test_path)
 
@@ -111,6 +118,10 @@ def create_dataset(train_path, test_path, seed=10, save_dir=commons.dataset_path
     train_x, val_x, train_y, val_y = split_train_val(train_set, train_size=0.8,
         seed=seed)
 
+    if standardize:
+        print("\nStandardizing dataset...")
+        train_x, val_x, test_set = scale_dataset(train_x, val_x, test_set)
+
     # Save data to csv
     if save_dir:
         print("\nSaving dataset to file...")
@@ -120,7 +131,8 @@ def create_dataset(train_path, test_path, seed=10, save_dir=commons.dataset_path
         val_set[commons.target_column_name]   = val_y
 
         train_set.to_csv(Path(save_dir) / "train_processed.csv", index=False)
-        val_set.to_csv(Path(save_dir) / "val_processed.csv", index=False)
+        val_set.to_csv(Path(save_dir)   / "val_processed.csv", index=False)
+        test_set.to_csv(Path(save_dir)  / "test_processed.csv", index=False)
 
     # Return data anyway for sklearn models
     return train_x, val_x, train_y, val_y
