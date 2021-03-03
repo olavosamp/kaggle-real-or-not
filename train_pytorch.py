@@ -41,13 +41,15 @@ if __name__ == "__main__":
         normalize=normalize, balance=balance_data)
     dataset["val"] = TextDataset(val_processed_path, target_column=commons.target_column_name,
         normalize=normalize, balance=False)
+    num_features = dataset['train'].dataset.shape[1]
 
-    print("Train set size: {}.".format(len(dataset["train"])))
-    print("Validation set size: {}.".format(len(dataset["val"])))
+    print(f"Train features: {num_features}.")
+    print(f"Train set size: {len(dataset['train'])}.")
+    print(f"Validation set size: {len(dataset['val'])}.")
 
     # Load model
     # model = models.instantiate_resnet18_model(models.device, pretrained=True)
-    model = models.FeedForwardNet(vocabulary_size, 140, 2)
+    model = models.FeedForwardNet(num_features, 140, 2)
 
     # optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,
     #             momentum=momentum, weight_decay=weight_decay)

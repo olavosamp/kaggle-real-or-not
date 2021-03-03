@@ -101,7 +101,7 @@ def remove_empty_features(train_set, test_set, verbose=False):
     return train_set, test_set
 
 
-def create_dataset(train_path, test_path, seed=10, standardize=True, pca_ratio=0.95,
+def create_dataset(train_path, test_path, seed=10, standardize=True, pca_ratio=0.90,
      save_dir=commons.dataset_path):
     train_set = pd.read_csv(train_path)
     test_set = pd.read_csv(test_path)
@@ -121,6 +121,10 @@ def create_dataset(train_path, test_path, seed=10, standardize=True, pca_ratio=0
     if standardize:
         print("\nStandardizing dataset...")
         train_x, val_x, test_set = scale_dataset(train_x, val_x, test_set)
+
+    if pca_ratio < 1.:
+        print(f"\nPerforming dimensionality reduction...\nKeep {pca_ratio*100:.2f}% variance")
+        train_x, val_x = utils.reduce_dim_pca(train_x, val_x, pca_ratio)
 
     # Save data to csv
     if save_dir:
