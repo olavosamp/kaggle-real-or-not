@@ -100,13 +100,13 @@ class MetricTracker:
 
         self.time_string = time.strftime("%H:%M:%S", time.gmtime(result["seconds"]))
         print("Epoch complete in ", self.time_string)
-        print("{} loss: {:.4f}".format(phase, result["loss"]))
+        print(f"{phase} loss: {result['loss']:.4f}")
         if "accuracy" in self.tracked_metrics:
-            print("{} accuracy: {:.2f}%".format(phase, result["accuracy"]))
+            print(f"{phase} accuracy: {result['accuracy']*100:.2f}%")
         if "f1_score" in self.tracked_metrics:
-            print("{} F1: {:.4f}".format(phase, result["f1_score"]))
+            print(f"{phase} F1: {result['f1_score']:.4f}")
         if "roc_auc" in self.tracked_metrics:
-            print("{} AUC: {:.4f}".format(phase, result["roc_auc"]))
+            print(f"{phase} AUC: {result['roc_auc']:.4f}")
 
 
 def predict(model, dataloader, device=models.device, threshold=None, use_metadata=True):

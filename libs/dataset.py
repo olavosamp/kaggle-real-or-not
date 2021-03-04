@@ -149,6 +149,11 @@ def split_train_val(train_set, train_size=0.8, seed=None):
     train_x, val_x, train_y, val_y = train_test_split(train_x, train_y, train_size=train_size,
         random_state=seed)
 
+    train_x.reset_index(drop=True, inplace=True)
+    train_y.reset_index(drop=True, inplace=True)
+    val_x.reset_index(drop=True, inplace=True)
+    val_y.reset_index(drop=True, inplace=True)
+
     return train_x, val_x, train_y, val_y
 
 
@@ -177,7 +182,7 @@ def process_text(text, stopwords=None, stemmer=None):
 
 
 def bow_matrix(train_text, test_text, max_features, load_path=None, save_path=None):
-    vectorizer = CountVectorizer(max_features=5000, preprocessor=lambda x: x, tokenizer=lambda x: x)
+    vectorizer = CountVectorizer(max_features=max_features, preprocessor=lambda x: x, tokenizer=lambda x: x)
 
     if load_path:
         vectorizer.vocabulary_ = utils.load_pickle(load_path)
